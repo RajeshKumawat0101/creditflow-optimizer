@@ -25,8 +25,8 @@ class TestComprehensiveSchedulerSuite(unittest.TestCase):
         res = rsp_rrs_solve(inst, lambda_bal=1.0, seed=42)
         self.assertEqual(res.status, 'HEURISTIC_FAILED')
 
-    # 3. Zero Capacity
-    def test_03_zero_capacity(self):
+    # 3. Zero Capacity Slot (Explicit T5 Edge Case)
+    def test_03_zero_capacity_slot(self):
         tasks = [Task(1, 1, 1, 2, 1.0, (5, 0, 0, 0))]
         capacities = [(0, 10, 10, 10), (10, 10, 10, 10)]
         inst = ProblemInstance(1, 2, tasks, set(), capacities)
@@ -189,6 +189,24 @@ class TestComprehensiveSchedulerSuite(unittest.TestCase):
             if pure_res.status == 'OPTIMAL':
                 self.assertAlmostEqual(pure_res.penalty_total, bnb_res.penalty_total, places=4)
                 self.assertAlmostEqual(pure_res.penalty_base, bnb_res.penalty_base, places=4)
+
+    # 21. Single Task Instance (Explicit T5 Edge Case)
+    def test_21_single_task_instance(self):
+        tasks = [Task(1, 1, 1, 2, 5.0, (10, 10, 10, 10))]
+        capacities = [(100, 100, 100, 100), (100, 100, 100, 100)]
+        inst = ProblemInstance(1, 2, tasks, set(), capacities)
+        res = rsp_rrs_solve(inst, lambda_bal=1.0)
+        self.assertEqual(res.status, 'FEASIBLE')
+        self.assertEqual(res.schedule[1], 1)
+
+    # 22. All-Conflict Graph with Chromatic Number > K (Explicit T5 Edge Case)
+    def test_22_all_conflict_chromatic_greater_than_K(self):
+        tasks = [Task(i, 1, 1, 2, 1.0, (1, 1, 1, 1)) for i in range(1, 4)]
+        conflicts = {(1, 2), (2, 3), (1, 3)} # K3 clique requires 3 slots, but K=2!
+        capacities = [(10, 10, 10, 10), (10, 10, 10, 10)]
+        inst = ProblemInstance(3, 2, tasks, conflicts, capacities)
+        exact_res = da_bnb_exact_solve(inst)
+        self.assertEqual(exact_res.status, 'PROVEN_INFEASIBLE')
 
 if __name__ == '__main__':
     unittest.main()

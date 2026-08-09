@@ -1,6 +1,9 @@
 import time
 import math
+import json
 from typing import List, Dict
+import matplotlib.pyplot as plt
+
 from models import Task, ProblemInstance
 from generator import generate_instance
 from solvers.rsp_rrs import rsp_rrs_solve
@@ -8,57 +11,110 @@ from solvers.da_bnb import da_bnb_exact_solve
 from solvers.pure_brute_force import pure_brute_force_solve
 
 def run_benchmarks():
-    print("=" * 95)
-    print("EXECUTABLE BENCHMARK RUNNER: RSP-RRS HEURISTIC VS DA-BNB EXACT SOLVER")
-    print("=" * 95)
+    print("=" * 110)
+    print("EXECUTABLE BENCHMARK RUNNER: PRESCRIBED SCOREME ASSIGNMENT BENCHMARK SUITE")
+    print("=" * 110)
 
-    # 1. Exact Comparison on Small Instances (Pure Brute-Force vs DA-BnB vs RSP-RRS)
-    small_n = [4, 5, 6]
-    print("\n--- 1. Small Instance Ground-Truth Evaluation (Pure BF vs DA-BnB vs RSP-RRS) ---")
-    print(f"{'N':<5}{'K':<5}{'BF Status':<15}{'BnB Status':<18}{'P_base':<12}{'P_bal':<12}{'P_total(OPT)':<15}{'P_heur':<12}{'Abs Gap':<12}{'Ratio':<10}")
-    print("-" * 120)
+    # The 9 Prescribed Assignment Benchmark Configurations
+    prescribed_cases = [
+        {"category": "Small",  "n": 8,   "K": 3,  "density": 0.30, "seed": 1},
+        {"category": "Small",  "n": 10,  "K": 4,  "density": 0.40, "seed": 2},
+        {"category": "Small",  "n": 12,  "K": 4,  "density": 0.50, "seed": 3},
+        {"category": "Medium", "n": 50,  "K": 8,  "density": 0.25, "seed": 10},
+        {"category": "Medium", "n": 100, "K": 10, "density": 0.30, "seed": 11},
+        {"category": "Medium", "n": 150, "K": 12, "density": 0.35, "seed": 12},
+        {"category": "Stress", "n": 200, "K": 15, "density": 0.40, "seed": 20},
+        {"category": "Stress", "n": 200, "K": 5,  "density": 0.60, "seed": 21},
+        {"category": "Stress", "n": 200, "K": 20, "density": 0.10, "seed": 22},
+    ]
 
-    for n in small_n:
-        inst = generate_instance(num_tasks=n, num_slots=3, edge_probability=0.2, max_demand_ratio=0.3, seed=100 + n)
-        
-        bf_res = pure_brute_force_solve(inst, lambda_bal=1.0)
-        bnb_res = da_bnb_exact_solve(inst, lambda_bal=1.0)
-        heur_res = rsp_rrs_solve(inst, lambda_bal=1.0, max_lns_iters=100, seed=100 + n)
+    benchmark_results = []
+    
+    print("\n--- 1. Executing 9 Prescribed Benchmark Cases ---")
+    print(f"{'Cat':<8}{'N':<5}{'K':<5}{'Density':<9}{'Seed':<6}{'Exact Status':<18}{'P_OPT':<12}{'RSP-RRS Status':<18}{'P_heur':<12}{'Emp Ratio':<10}{'Runtime(ms)':<12}")
+    print("-" * 125)
 
-        if bnb_res.status == 'OPTIMAL' and heur_res.status == 'FEASIBLE':
-            abs_gap = heur_res.penalty_total - bnb_res.penalty_total
-            ratio_str = f"{heur_res.penalty_total / bnb_res.penalty_total:.4f}" if bnb_res.penalty_total > 0 else "1.0000"
+    for cfg in prescribed_cases:
+        n, K, density, seed = cfg["n"], cfg["K"], cfg["density"], cfg["seed"]
+        inst = generate_instance(num_tasks=n, num_slots=K, edge_probability=density, seed=seed)
+
+        # Run exact solver on small instances (n <= 12) with a reasonable timeout/limit check
+        if n <= 12:
+            exact_res = da_bnb_exact_solve(inst, lambda_bal=1.0)
+            exact_status = exact_res.status
+            p_opt = exact_res.penalty_total if exact_status == 'OPTIMAL' else float('inf')
         else:
-            abs_gap = float('nan')
+            exact_status = "N/A (Large)"
+            p_opt = float('nan')
+
+        # Run RSP-RRS Heuristic Solver
+        heur_res = rsp_rrs_solve(inst, lambda_bal=1.0, max_lns_iters=100, seed=seed)
+        p_heur = heur_res.penalty_total if heur_res.status == 'FEASIBLE' else float('inf')
+
+        # Calculate empirical ratio
+        if not math.isnan(p_opt) and exact_status == 'OPTIMAL' and heur_res.status == 'FEASIBLE':
+            ratio = p_heur / p_opt
+            ratio_str = f"{ratio:.4f}"
+        else:
+            ratio = float('nan')
             ratio_str = "N/A"
 
-        p_base_str = f"{bnb_res.penalty_base:.2f}" if bnb_res.status == 'OPTIMAL' else "INF"
-        p_bal_str = f"{bnb_res.penalty_bal:.4f}" if bnb_res.status == 'OPTIMAL' else "INF"
-        p_opt_str = f"{bnb_res.penalty_total:.4f}" if bnb_res.status == 'OPTIMAL' else "INF"
-        p_heur_str = f"{heur_res.penalty_total:.4f}" if heur_res.status == 'FEASIBLE' else "FAILED"
-        gap_str = f"{abs_gap:.4f}" if not math.isnan(abs_gap) else "N/A"
+        p_opt_str = f"{p_opt:.4f}" if not math.isnan(p_opt) and exact_status == 'OPTIMAL' else ("INF" if exact_status == 'PROVEN_INFEASIBLE' else "N/A")
+        p_heur_str = f"{p_heur:.4f}" if heur_res.status == 'FEASIBLE' else "FAILED"
 
-        print(f"{n:<5}{inst.K:<5}{bf_res.status:<15}{bnb_res.status:<18}{p_base_str:<12}{p_bal_str:<12}{p_opt_str:<15}{p_heur_str:<12}{gap_str:<12}{ratio_str:<10}")
+        print(f"{cfg['category']:<8}{n:<5}{K:<5}{density:<9.2f}{seed:<6}{exact_status:<18}{p_opt_str:<12}{heur_res.status:<18}{p_heur_str:<12}{ratio_str:<10}{heur_res.runtime_ms:<12.2f}")
 
-    # 2. Large Instance Scaling Benchmark
-    large_n = [10, 25, 50, 100, 200]
-    print("\n--- 2. Large Instance Scaling Benchmark (RSP-RRS Heuristic) ---")
-    print(f"{'N':<5}{'K':<5}{'Status':<18}{'P_base':<15}{'P_bal':<15}{'P_total':<15}{'Runtime (ms)':<15}")
-    print("-" * 80)
+        benchmark_results.append({
+            "category": cfg["category"],
+            "n": n,
+            "K": K,
+            "density": density,
+            "seed": seed,
+            "exact_status": exact_status,
+            "p_opt": p_opt if not math.isnan(p_opt) else None,
+            "heur_status": heur_res.status,
+            "p_heur": p_heur if heur_res.status == 'FEASIBLE' else None,
+            "empirical_ratio": ratio if not math.isnan(ratio) else None,
+            "runtime_ms": round(heur_res.runtime_ms, 2)
+        })
 
-    for n in large_n:
-        k_slots = max(5, n // 3)
-        inst = generate_instance(num_tasks=n, num_slots=k_slots, edge_probability=0.1, max_demand_ratio=0.25, seed=200 + n)
-        heur_res = rsp_rrs_solve(inst, lambda_bal=1.0, max_lns_iters=100, seed=200 + n)
+    # Save benchmark results to JSON
+    with open("prescribed_benchmarks.json", "w") as f:
+        json.dump(benchmark_results, f, indent=2)
+    print("\nSaved benchmark metrics to prescribed_benchmarks.json")
 
-        p_base_str = f"{heur_res.penalty_base:.2f}" if heur_res.status == 'FEASIBLE' else "N/A"
-        p_bal_str = f"{heur_res.penalty_bal:.4f}" if heur_res.status == 'FEASIBLE' else "N/A"
-        p_total_str = f"{heur_res.penalty_total:.4f}" if heur_res.status == 'FEASIBLE' else "FAILED"
+    # Generate Required Plots (penalty_vs_n.png and runtime_vs_n.png)
+    feasible_results = [r for r in benchmark_results if r["heur_status"] == 'FEASIBLE']
+    n_vals = [r["n"] for r in feasible_results]
+    penalties = [r["p_heur"] for r in feasible_results]
+    runtimes = [r["runtime_ms"] for r in feasible_results]
 
-        print(f"{n:<5}{inst.K:<5}{heur_res.status:<18}{p_base_str:<15}{p_bal_str:<15}{p_total_str:<15}{heur_res.runtime_ms:<15.2f}")
+    # Chart 1: Penalty vs N
+    plt.figure(figsize=(8, 5))
+    plt.plot(n_vals, penalties, marker='o', color='b', linestyle='-', linewidth=2)
+    plt.title("RSP-RRS Total Penalty vs Number of Tasks (N)")
+    plt.xlabel("Number of Tasks (N)")
+    plt.ylabel("Total Penalty P_total")
+    plt.grid(True, linestyle='--', alpha=0.6)
+    plt.tight_layout()
+    plt.savefig("penalty_vs_n.png")
+    plt.close()
 
-    # 3. Lambda Sensitivity Demonstration Instance
-    print("\n--- 3. Lambda Sensitivity Experiment (Deliberate Trade-off Demonstration) ---")
+    # Chart 2: Runtime vs N
+    plt.figure(figsize=(8, 5))
+    plt.plot(n_vals, runtimes, marker='s', color='r', linestyle='-', linewidth=2)
+    plt.title("RSP-RRS Runtime (ms) vs Number of Tasks (N)")
+    plt.xlabel("Number of Tasks (N)")
+    plt.ylabel("Execution Time (ms)")
+    plt.grid(True, linestyle='--', alpha=0.6)
+    plt.tight_layout()
+    plt.savefig("runtime_vs_n.png")
+    plt.close()
+
+    print("Generated penalty_vs_n.png and runtime_vs_n.png charts.")
+
+    # 2. Lambda Sensitivity Experiment (Deliberate Trade-off Demonstration)
+    print("\n--- 2. Lambda Sensitivity Experiment (Deliberate Trade-off Demonstration) ---")
     print(f"{'Lambda':<10}{'P_base':<15}{'P_bal':<15}{'P_total':<15}{'Task 2 Slot':<15}{'Status':<15}")
     print("-" * 85)
 

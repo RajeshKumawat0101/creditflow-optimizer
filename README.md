@@ -35,7 +35,7 @@ where:
 
 ---
 
-## 4. Solvers & Algorithms
+## 4. Solvers & Architecture
 
 ### RSP-RRS Heuristic Solver (`solvers/rsp_rrs.py`)
 Polynomial-time heuristic featuring:
@@ -54,7 +54,46 @@ Domain-Aware Branch-and-Bound exact solver guaranteeing ground-truth optimal sol
 
 ---
 
-## 5. Solver Return Status Semantics
+## 5. JSON Input / Output Interface Contract (`run.py`)
+
+The scheduling engine supports standard JSON I/O via `run.py`:
+
+```bash
+python run.py input.json
+```
+
+### JSON Input Format (`input.json`):
+```json
+{
+  "n": 2,
+  "K": 2,
+  "lambda_bal": 1.0,
+  "tasks": [
+    {"task_id": 1, "duration": 1, "release_time": 1, "deadline": 2, "weight": 10.0, "resources": [5, 10, 0, 2]},
+    {"task_id": 2, "duration": 1, "release_time": 1, "deadline": 2, "weight": 2.0, "resources": [4, 8, 0, 1]}
+  ],
+  "conflicts": [[1, 2]],
+  "capacities": [[100, 100, 100, 100], [100, 100, 100, 100]]
+}
+```
+
+### JSON Output Format:
+```json
+{
+  "assignment": {
+    "1": 1,
+    "2": 2
+  },
+  "penalty": 104.0,
+  "runtime_ms": 0.45,
+  "feasible": true,
+  "violation_reason": null
+}
+```
+
+---
+
+## 6. Solver Return Status Semantics
 
 - **`OPTIMAL`**: Returned by exact solvers (`DA-BnB`, `Pure Brute Force`) when exhaustive search completes and proves global optimality.
 - **`PROVEN_INFEASIBLE`**: Returned by exact solvers when exhaustive search proves zero feasible schedules exist.
@@ -64,24 +103,32 @@ Domain-Aware Branch-and-Bound exact solver guaranteeing ground-truth optimal sol
 
 ---
 
-## 6. Installation & Setup
+## 7. Installation & Setup
 
 ```bash
-# Requires Python 3.8+ with standard library
-cd "d:/CreditFlow Optimizer"
-
+# Pure Python 3.10+ Standard Library implementation (NO external optimization libraries used)
 # Compile all modules
 python -m compileall .
 ```
 
 ---
 
-## 7. Running Tests & Benchmarks
+## 8. Running Tests & Benchmarks
 
 ```bash
-# Run full 20-scenario unit & adversarial test suite
+# Run full 22-scenario unit & adversarial test suite
 python -m unittest test_suite.py
 
-# Run executable benchmark runner
+# Run executable benchmark runner (executes exact 9 prescribed assignment cases & generates charts)
 python benchmark_runner.py
 ```
+
+---
+
+## 9. Documentation Manifest
+
+- **[DESIGN_JOURNAL.md](file:///DESIGN_JOURNAL.md)**: Engineering design choices & trade-off log.
+- **[MATHEMATICAL_PROOFS.md](file:///MATHEMATICAL_PROOFS.md)**: Formal proofs for NP membership, $F1/F2/F3$ simultaneous reduction, and lower bound admissibility.
+- **[BENCHMARKS.md](file:///BENCHMARKS.md)**: Exact 9 prescribed benchmark results, empirical approximation ratios, and plots (`penalty_vs_n.png`, `runtime_vs_n.png`).
+- **[VIVA.md](file:///VIVA.md)**: Technical viva defense guide, manual 6-node trace, and code mappings.
+- **[SUBMISSION_CHECKLIST.md](file:///SUBMISSION_CHECKLIST.md)**: Deliverables checklist & file manifest.
